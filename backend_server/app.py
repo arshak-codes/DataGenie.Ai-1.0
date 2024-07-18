@@ -40,14 +40,14 @@ def read_sql_query(sql, db):
     rows = cur.fetchall()
     conn.commit()
     conn.close()
-    return rows
+    return rows, sql
 
 @app.route('/query', methods=['POST'])
 def query():
     question = request.json.get('question')
     response = get_gemini_response(question)
-    rows = read_sql_query(response, "student.db")
-    return jsonify(rows)
+    rows, executed_sql = read_sql_query(response, "student.db")
+    return jsonify({'data': rows, 'sql': executed_sql})
 
 if __name__ == '__main__':
     app.run(debug=True)
