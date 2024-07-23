@@ -53,6 +53,7 @@ def query():
     rows, column_names, executed_sql = read_sql_query(response, "student.db")
     return jsonify({'columns': column_names, 'data': rows, 'sql': executed_sql})
 
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
@@ -68,6 +69,8 @@ def upload_file():
 def download_file():
     filename = 'student.db'
     return send_file(filename, as_attachment=True)
+
+
 
 if __name__ == '__main__':
     app.run(debug=False)
