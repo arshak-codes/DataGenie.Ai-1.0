@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import os
 import sqlite3
 import google.generativeai as genai
@@ -22,7 +22,9 @@ the SQL command will be something like this SELECT * FROM STUDENT where CLASS="D
 \nExample 3 - List all employees in the IT department, 
 the SQL command will be something like this SELECT * FROM EMPLOYEE where DEPARTMENT="IT";
 \nExample 4 - Show the names which contain "sh" from both STUDENT and EMPLOYEE tables, 
-the SQL command will be something like this SELECT NAME FROM STUDENT WHERE NAME LIKE '%sh%' UNION SELECT NAME FROM EMPLOYEE WHERE NAME LIKE '%sh%';
+the SQL command will be something like this SELECT NAME, NULL AS CLASS, NULL AS SECTION, NULL AS MARKS FROM STUDENT WHERE NAME LIKE '%sh%' 
+UNION 
+SELECT NAME, DEPARTMENT AS CLASS, NULL AS SECTION, SALARY AS MARKS FROM EMPLOYEE WHERE NAME LIKE '%sh%';
 Please ensure the SQL command is a single query using JOIN or UNION as needed and never generate multiple separate SELECT statements.
 also the sql code should not have ``` in beginning or end and sql word in output
 """
@@ -38,16 +40,34 @@ def read_sql_query(sql, db):
     cur = conn.cursor()
     cur.execute(sql)
     rows = cur.fetchall()
+    column_names = [description[0] for description in cur.description]
+    print(cur.description)
     conn.commit()
     conn.close()
-    return rows, sql
+    return rows, column_names, sql
 
 @app.route('/query', methods=['POST'])
 def query():
     question = request.json.get('question')
     response = get_gemini_response(question)
-    rows, executed_sql = read_sql_query(response, "student.db")
-    return jsonify({'data': rows, 'sql': executed_sql})
+    rows, column_names, executed_sql = read_sql_query(response, "student.db")
+    return jsonify({'columns': column_names, 'data': rows, 'sql': executed_sql})
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file:
+        file.save("student.db")  # Save the uploaded file
+        return jsonify({'message': 'File uploaded successfully', 'filename': file.filename}), 200
+
+@app.route('/download', methods=['GET'])
+def download_file():
+    filename = 'student.db'
+    return send_file(filename, as_attachment=True)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)

@@ -1,10 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:csv/csv.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 import 'package:path/path.dart' as path;
+import 'package:file_picker/file_picker.dart';
 
 void main() {
   runApp(MyApp());
@@ -31,10 +33,13 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _controller = TextEditingController();
+  List<String> _columns = [];
   List<List<dynamic>> _data = [];
   String _sqlQuery = '';
   bool _showSql = false;
   bool _isLoading = false;
+  File? _databaseFile;
+  String _databaseName = 'No Database Connected';
 
   Future<void> _submit() async {
     setState(() {
@@ -51,6 +56,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         setState(() {
+          _columns = List<String>.from(jsonResponse['columns']);
           _data = List<List<dynamic>>.from(jsonResponse['data']);
           _sqlQuery = jsonResponse['sql'];
           _isLoading = false;
@@ -77,15 +83,14 @@ class _MyHomePageState extends State<MyHomePage> {
     }
 
     try {
-      final csvData = ListToCsvConverter().convert(_data);
-      
-      // Get the user's home directory
-      final home = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
-      
-      // Create a file in the Downloads folder
-      final file = File(path.join(home.path, 'data_${DateTime.now().millisecondsSinceEpoch}.csv'));
-      
-      // Write the CSV data to the file
+      final csvData = ListToCsvConverter().convert([_columns, ..._data]);
+
+      final home = await getDownloadsDirectory() ??
+          await getApplicationDocumentsDirectory();
+
+      final file = File(path.join(
+          home.path, 'data_${DateTime.now().millisecondsSinceEpoch}.csv'));
+
       await file.writeAsString(csvData);
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -98,9 +103,61 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _uploadDatabase() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['db'],
+    );
+
+    if (result != null) {
+      File file = File(result.files.single.path!);
+      setState(() {
+        _databaseFile = file;
+        _databaseName = path.basename(file.path);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Database file selected')),
+      );
+
+      try {
+        var request = http.MultipartRequest(
+          'POST',
+          Uri.parse('http://127.0.0.1:5000/upload'),
+        );
+        request.files.add(await http.MultipartFile.fromPath(
+          'file',
+          file.path,
+          filename: path.basename(file.path),
+        ));
+
+        var response = await request.send();
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Database file uploaded successfully')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to upload database file')),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error uploading file: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          _databaseName,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: Color(0xFF252526),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -111,6 +168,11 @@ class _MyHomePageState extends State<MyHomePage> {
               style: TextStyle(color: Colors.green),
             ),
             SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: _uploadDatabase,
+              child: Text('Upload Database File'),
+            ),
+            SizedBox(height: 20),
             Container(
               decoration: BoxDecoration(
                 color: Color(0xFF252526),
@@ -129,6 +191,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   prefixIcon: Icon(Icons.person, color: Colors.white70),
                 ),
                 style: TextStyle(color: Colors.white),
+                onSubmitted: (value) => _submit(),
               ),
             ),
             SizedBox(height: 20),
@@ -177,17 +240,25 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      columns: _data[0].map((item) => DataColumn(label: Text(item.toString()))).toList(),
-                      rows: _data.sublist(1).map((row) => DataRow(
-                        cells: row.map((cell) => DataCell(Text(cell.toString()))).toList(),
-                      )).toList(),
+                      columns: _columns
+                          .map((column) => DataColumn(label: Text(column)))
+                          .toList(),
+                      rows: _data
+                          .map((row) => DataRow(
+                                cells: row
+                                    .map((cell) =>
+                                        DataCell(Text(cell.toString())))
+                                    .toList(),
+                              ))
+                          .toList(),
                     ),
                   ),
                 ),
               ),
             SizedBox(height: 10),
             if (_data.isNotEmpty)
-              Text('1 to ${_data.length - 1} of ${_data.length - 1}', style: TextStyle(color: Colors.white70)),
+              Text('1 to ${_data.length} of ${_data.length}',
+                  style: TextStyle(color: Colors.white70)),
           ],
         ),
       ),
