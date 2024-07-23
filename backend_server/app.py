@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import os
 import sqlite3
 import google.generativeai as genai
@@ -53,5 +53,24 @@ def query():
     rows, column_names, executed_sql = read_sql_query(response, "student.db")
     return jsonify({'columns': column_names, 'data': rows, 'sql': executed_sql})
 
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file:
+        file.save("student.db")  # Save the uploaded file
+        return jsonify({'message': 'File uploaded successfully', 'filename': file.filename}), 200
+
+@app.route('/download', methods=['GET'])
+def download_file():
+    filename = 'student.db'
+    return send_file(filename, as_attachment=True)
+
+
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
